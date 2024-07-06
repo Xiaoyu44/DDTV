@@ -13,6 +13,7 @@ using SharpCompress.Common;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -34,6 +35,7 @@ using static Core.Config;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.ToolTip;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.TrackBar;
 using Key = System.Windows.Input.Key;
+using MenuItem = Wpf.Ui.Controls.MenuItem;
 
 namespace Desktop.Views.Windows
 {
@@ -56,7 +58,7 @@ namespace Desktop.Views.Windows
         /// <summary>
         /// 当前窗口的置顶状态
         /// </summary>
-        private bool TopMostSwitch = false; 
+        private bool TopMostSwitch = false;
         /// <summary>
         /// 当前播放窗口所属的房间卡
         /// </summary>
@@ -69,6 +71,10 @@ namespace Desktop.Views.Windows
         /// 弹幕发射轨道
         /// </summary>
         public DanMuOrbitInfo[] danMuOrbitInfos = new DanMuOrbitInfo[100];
+        /// <summary>
+        /// 当前窗口的清晰度
+        /// </summary>
+        public long CurrentWindowClarity = 10000;
         public class DanMuOrbitInfo
         {
             public string Text { get; set; }
@@ -79,7 +85,7 @@ namespace Desktop.Views.Windows
         {
             InitializeComponent();
             vlcPlayModels = new();
-
+            CurrentWindowClarity = Core_RunConfig._DefaultPlayResolution;
             this.DataContext = vlcPlayModels;
             _Room.GetCardForUID(uid, ref roomCard);
 
@@ -107,16 +113,16 @@ namespace Desktop.Views.Windows
             videoView.MediaPlayer.Volume = 30;
 
             Task.Run(() => InitVlcPlay(uid));
-
+            Task.Run(() => SetClarityMenu());
         }
         public void InitVlcPlay(long uid)
         {
-            PlaySteam();
+            PlaySteam(null);
             Dispatcher.Invoke(() =>
             {
                 barrageConfig = new BarrageConfig(DanmaCanvas, this.Width);
             });
-            if(Core_RunConfig._PlayWindowDanmaSwitch)
+            if (Core_RunConfig._PlayWindowDanmaSwitch)
             {
                 SetDanma();
             }
@@ -124,6 +130,55 @@ namespace Desktop.Views.Windows
             {
                 DanmaCanvas.Opacity = Core_RunConfig._PlayWindowDanMuFontOpacity;
             });
+        }
+
+        private void SetClarityMenu()
+        {
+            List<long> DefinitionList = Core.RuntimeObject.Download.Basics.GetOptionalClarity(roomCard.RoomId, "http_hls", "fmp4", "avc");
+
+            Dictionary<long, string> clarityMap = new Dictionary<long, string>
+            {
+                {30000, "杜比"},
+                {20000, "4K"},
+                {10000, "原画"},
+                {400, "蓝光"},
+                {250, "超清"},
+                {150, "高清"},
+                {80, "流畅"}
+            };
+
+            foreach (var clarity in clarityMap)
+            {
+                if (DefinitionList.Contains(clarity.Key))
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        MenuItem childMenuItem = new MenuItem
+                        {
+                            Header = clarity.Value,
+                            Tag = clarity.Key
+                        };
+                        childMenuItem.Click += ModifyResolutionRightClickMenuEvent_Click;
+                        SwitchPlaybackClarity_Menu.Items.Add(childMenuItem);
+                    });
+                }
+            }
+        }
+
+
+        private void ModifyResolutionRightClickMenuEvent_Click(object sender, RoutedEventArgs e)
+        {
+            MenuItem clickedMenuItem = sender as MenuItem;
+            
+            Dispatcher.Invoke(() =>
+            {
+                CurrentWindowClarity = (long)clickedMenuItem.Tag; // 获取被点击的菜单项的索引
+            });
+
+            vlcPlayModels.LoadingVisibility = Visibility.Visible;
+            vlcPlayModels.OnPropertyChanged("LoadingVisibility");
+
+            PlaySteam(null);
         }
 
         private void MediaPlayer_Playing(object? sender, EventArgs e)
@@ -140,12 +195,12 @@ namespace Desktop.Views.Windows
         {
             vlcPlayModels.LoadingVisibility = Visibility.Visible;
             vlcPlayModels.OnPropertyChanged("LoadingVisibility");
-            PlaySteam();
+            PlaySteam(null);
         }
 
         private async void SetDanma()
         {
-            if(DanmaSwitch)
+            if (DanmaSwitch)
             {
                 return;
             }
@@ -230,7 +285,7 @@ namespace Desktop.Views.Windows
                 }
                 if (string.IsNullOrEmpty(Url))
                 {
-                    Url = GeUrl();
+                    Url = GeUrl(CurrentWindowClarity);
                 }
                 try
                 {
@@ -288,10 +343,10 @@ namespace Desktop.Views.Windows
         /// </summary>
         /// <param name="uid"></param>
         /// <returns></returns>
-        public string GeUrl()
+        public string GeUrl(long Definition)
         {
             string url = "";
-            if (roomCard != null && (Core.RuntimeObject.Download.HLS.GetHlsAvcUrl(roomCard, out url)))
+            if (roomCard != null && (Core.RuntimeObject.Download.HLS.GetHlsAvcUrl(roomCard, Definition, out url)))
             {
                 Log.Info(nameof(GeUrl), $"房间号:[{roomCard.RoomId}]，获取到直播流地址:[{url}]");
                 return url;
@@ -314,7 +369,7 @@ namespace Desktop.Views.Windows
                 }
                 Log.Info(nameof(PlaySteam), $"房间号:[{roomCard.RoomId}],关闭播放器");
             }
-            if(DanmaSwitch)
+            if (DanmaSwitch)
             {
                 CloseDanma();
             }
@@ -407,7 +462,6 @@ namespace Desktop.Views.Windows
                         break;
                     }
                 }
-
                 danMuOrbitInfos[Index].Time = (int)(Init.GetRunTime() + 5);
                 //非UI线程调用UI组件
                 System.Windows.Application.Current.Dispatcher.Invoke(async () =>
@@ -484,7 +538,7 @@ namespace Desktop.Views.Windows
             {
                 vlcPlayModels.LoadingVisibility = Visibility.Visible;
                 vlcPlayModels.OnPropertyChanged("LoadingVisibility");
-                PlaySteam();
+                PlaySteam(null);
             }
         }
 
@@ -514,12 +568,12 @@ namespace Desktop.Views.Windows
         {
             vlcPlayModels.LoadingVisibility = Visibility.Visible;
             vlcPlayModels.OnPropertyChanged("LoadingVisibility");
-            PlaySteam();
+            PlaySteam(null);
         }
 
         private void MenuItem_Switch_Danma_Send_Click(object sender, RoutedEventArgs e)
         {
-            if(DanmaBox.Visibility== Visibility.Collapsed)
+            if (DanmaBox.Visibility == Visibility.Collapsed)
             {
                 DanmaBox.Visibility = Visibility.Visible;
             }
@@ -537,14 +591,14 @@ namespace Desktop.Views.Windows
 
         private void MenuItem_Switch_Danma_Exhibition_Click(object sender, RoutedEventArgs e)
         {
-            if(DanmaSwitch)
+            if (DanmaSwitch)
             {
-                SetNotificatom("关闭弹幕显示",$"{roomCard.Name}({roomCard.RoomId})播放窗口的弹幕显示已关闭");
+                SetNotificatom("关闭弹幕显示", $"{roomCard.Name}({roomCard.RoomId})播放窗口的弹幕显示已关闭");
                 CloseDanma();
             }
             else
             {
-                SetNotificatom("打开弹幕显示",$"{roomCard.Name}({roomCard.RoomId})播放窗口的弹幕显示已打开");
+                SetNotificatom("打开弹幕显示", $"{roomCard.Name}({roomCard.RoomId})播放窗口的弹幕显示已打开");
                 SetDanma();
             }
         }
@@ -571,14 +625,39 @@ namespace Desktop.Views.Windows
             {
                 this.Topmost = false;
                 TopMostSwitch = false;
-                SetNotificatom("撤销窗口置顶",$"{roomCard.Name}({roomCard.RoomId})窗口置顶已关闭");
+                SetNotificatom("撤销窗口置顶", $"{roomCard.Name}({roomCard.RoomId})窗口置顶已关闭");
             }
             else
             {
                 this.Topmost = true;
                 TopMostSwitch = true;
-                SetNotificatom("打开窗口置顶",$"{roomCard.Name}({roomCard.RoomId})窗口置顶已打开");
+                SetNotificatom("打开窗口置顶", $"{roomCard.Name}({roomCard.RoomId})窗口置顶已打开");
             }
+        }
+
+        private void DanmaOnly_DanmaInput_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.KeyStates == Keyboard.GetKeyStates(Key.Enter))
+            {
+                string T = DanmaOnly_DanmaInput.Text;
+                if (string.IsNullOrEmpty(T) && T.Length > 20)
+                {
+                    return;
+                }
+                Danmu.SendDanmu(roomCard.RoomId.ToString(), T);
+                DanmaOnly_DanmaInput.Clear();
+            }
+        }
+
+        private void MenuItem_OpenLiveUlr_Click(object sender, RoutedEventArgs e)
+        {
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "https://live.bilibili.com/" + roomCard.RoomId,
+                UseShellExecute = true
+            };
+            Process.Start(psi);
         }
     }
 }

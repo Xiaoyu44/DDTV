@@ -177,8 +177,8 @@ namespace Core.Tools
                     catch (Exception ex)
                     {
                         error_count++;
-                        Console.WriteLine($"出现网络错误，错误详情：{ex.ToString()}\r\n\r\n===========下载执行重试，如果没同一个文件重复提示错误，则表示重试成功==============\r\n");
-
+                        Console.WriteLine($"出现网络错误，进行重试\r\n\r\n===========下载执行重试，如果没同一个文件重复提示错误，则表示重试成功==============\r\n");
+                        Log.Error(nameof(ProgramUpdates), $"出现网络错误",ex,false);
 
                     }
                 } while (string.IsNullOrEmpty(str));
@@ -220,7 +220,20 @@ namespace Core.Tools
                 {
                     _httpClient.Timeout = new TimeSpan(0, 0, 10);
                     _httpClient.DefaultRequestHeaders.Referrer = new Uri("https://update5.ddtv.pro");
-                    if (checkVersion())
+
+                    bool ffmpegupdate = false;
+                    string ffmpegPath = "./plugins/ffmpeg/ffmpeg.exe";
+                    if(File.Exists(ffmpegPath))
+                    {
+                        FileInfo fileInfo = new(ffmpegPath);
+                        if (fileInfo.Length < 100000000)
+                        {
+                            ffmpegupdate = true;
+                        }
+                    }
+                    
+
+                    if (ffmpegupdate || checkVersion())
                     {
                         string DL_FileListUrl = $"/{type}/{(Isdev ? "dev" : "release")}/{type}_Update.json";
                         string web = Get(DL_FileListUrl);
@@ -247,9 +260,8 @@ namespace Core.Tools
                                     }
                                 }
 
-                                if (!item.FilePath.Contains("bin/Update"))
+                                if (!item.FilePath.Contains("bin/Update") && !item.FileName.ToLower().Contains("ffmpeg.exe"))
                                 {
-
                                     FileUpdateStatus = false;
                                 }
 
@@ -274,7 +286,16 @@ namespace Core.Tools
                                 {
                                     try
                                     {
-                                        dl_ok = DownloadFileAsync(item.Key, item.Value.FilePath);
+                                        if(item.Value.Name.ToLower().Contains("ffmpeg.exe"))
+                                        {
+                                            ReplaceUpdateFfmpe(item.Key);
+                                            dl_ok = true;
+                                        }
+                                        else
+                                        {
+                                            dl_ok = DownloadFileAsync(item.Key, item.Value.FilePath);
+                                        }
+                                        
                                     }
                                     catch (Exception)
                                     {
@@ -293,6 +314,46 @@ namespace Core.Tools
                     }
                 }
             }
+            private static bool FFmpegUpdateing = false;
+            private static void ReplaceUpdateFfmpe(string url)
+            {
+                Task.Run(() =>
+                {
+                    if (!FFmpegUpdateing)
+                    {
+                        FFmpegUpdateing = true;
+
+                        Thread.Sleep(60 * 1000);
+                        try
+                        {
+                            string ffmpegPath = "./plugins/ffmpeg/ffmpeg.exe";
+                            string ffmpegUpdatePath = Core.Config.Core_RunConfig._TemporaryFileDirectory + "update_ffmpeg.exe";
+                            if (DownloadFileAsync(url, ffmpegUpdatePath,true))
+                            {
+                                if (File.Exists(ffmpegUpdatePath))
+                                {
+                                    if (File.Exists(ffmpegPath))
+                                    {
+                                        File.Delete(ffmpegPath);
+                                    }
+                                    File.Move(ffmpegUpdatePath, ffmpegPath);
+                                    Log.Info(nameof(ReplaceUpdateFfmpe), "检查并更新ffmpeg依赖完成");
+                                }
+                            }
+                            else
+                            {
+                                Log.Warn(nameof(ReplaceUpdateFfmpe), "尝试检查并更新ffmpeg依赖时，无法连接R2服务器，更新失败");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error(nameof(ReplaceUpdateFfmpe), "尝试检查并更新ffmpeg依赖失败", ex, true);
+                        }
+                        FFmpegUpdateing = false;
+                    }
+                });
+            }
+
             public static bool checkVersion()
             {
                 string FI = "";
@@ -418,7 +479,7 @@ namespace Core.Tools
                 return str;
             }
 
-            public static bool DownloadFileAsync(string url, string outputPath)
+            public static bool DownloadFileAsync(string url, string outputPath, bool restrictedPrimaryServer = false)
             {
                 int error_count = 0;
                 while (true)
@@ -435,6 +496,11 @@ namespace Core.Tools
                     }
                     else
                     {
+                        if(restrictedPrimaryServer)
+                        {
+                            Log.Info(nameof(Update_UpdateProgram),$"出现网络错误,MainOnly");
+                            return false;
+                        }
                         FileDownloadAddress = MainDomainName + url;
                     }
                     try

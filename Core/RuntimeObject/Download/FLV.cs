@@ -119,6 +119,8 @@ namespace Core.RuntimeObject.Download
                     }
                 });
                 _stopTask.Start();
+
+                Log.Info(nameof(DlwnloadHls_avc_flv), $"创建文件[{card.DownInfo.DownloadFileList.CurrentOperationVideoFile}]");
                 await downloader.DownloadFileTaskAsync(DlwnloadURL, File);
                 hlsState = CheckAndHandleFile(File, ref card);
                 try
@@ -126,7 +128,7 @@ namespace Core.RuntimeObject.Download
                     stopWatch.Stop();
                 }
                 catch (Exception)
-                {}
+                { }
             });
             return (hlsState, File);
         }
@@ -138,14 +140,14 @@ namespace Core.RuntimeObject.Download
         /// <param name="roomCard"></param>
         /// <param name="Url"></param>
         /// <returns></returns>
-        public static bool GetFlvAvcUrl(RoomCardClass roomCard, out string Url)
+        public static bool GetFlvAvcUrl(RoomCardClass roomCard,int Definition, out string Url)
         {
             Url = "";
             if (!RoomInfo.GetLiveStatus(roomCard.RoomId))
             {
                 return false;
             }
-            HostClass hostClass = _GetHost(roomCard.RoomId, "http_stream", "flv", "avc");
+            HostClass hostClass = _GetHost(roomCard.RoomId, "http_stream", "flv", "avc", Definition);
             if (hostClass.Effective)
             {
                 Url = $"{hostClass.host}{hostClass.base_url}{hostClass.uri_name}{hostClass.extra}";

@@ -5,6 +5,7 @@ using Desktop.Models;
 using Desktop.Views.Windows;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -73,11 +74,9 @@ namespace Desktop.Views.Control
             RoomCardClass roomCard = new();
             _Room.GetCardForUID(uid, ref roomCard);
             string url = "";
-            if (roomCard != null && (Core.RuntimeObject.Download.HLS.GetHlsAvcUrl(roomCard, out url)) && !string.IsNullOrEmpty(url))
+            if (roomCard != null && (Core.RuntimeObject.Download.HLS.GetHlsAvcUrl(roomCard, Core.Config.Core_RunConfig._DefaultPlayResolution, out url)) && !string.IsNullOrEmpty(url))
             {
-
                 return true;
-
             }
             return false;
         }
@@ -187,6 +186,17 @@ namespace Desktop.Views.Control
             _Room.GetCardForUID(dataCard.Uid, ref roomCardClass);
             Windows.DanmaOnlyWindow danmaOnlyWindow = new(roomCardClass);
             danmaOnlyWindow.Show();
+        }
+
+        private void MenuItem_OpenLiveUlr_Click(object sender, RoutedEventArgs e)
+        {
+            Models.DataCard dataCard = GetDataCard(sender);
+            var psi = new ProcessStartInfo
+            {
+                FileName = "https://live.bilibili.com/" + dataCard.Room_Id,
+                UseShellExecute = true
+            };
+            Process.Start(psi);
         }
     }
 }
